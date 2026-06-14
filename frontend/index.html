@@ -1,0 +1,111 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Dashboard — ResumeIQ</title>
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<div id="app" class="shell"></div>
+<div id="toasts"></div>
+<script src="app.js"></script>
+<script>
+document.getElementById('app').innerHTML = sidebarHTML('dashboard') + `
+<main class="main"><div class="inner">
+  <div class="page-hd hd-row">
+    <div><h1>Dashboard</h1><p>Recruitment intelligence at a glance</p></div>
+    <select id="jd-sel" style="max-width:200px;font-size:12px"></select>
+  </div>
+  <div id="body"><div class="loader"><div class="spin"></div></div></div>
+</div></main>`;
+
+let jdId = null;
+loadJDSelect(document.getElementById('jd-sel'), id => { jdId = id; load(); });
+
+async function load() {
+  const el = document.getElementById('body');
+  el.innerHTML = `<div class="loader"><div class="spin"></div></div>`;
+  try {
+    const a = await getAnalytics(jdId);
+    if (!a.total_candidates) {
+      el.innerHTML = emptyState(ICONS.users, 'No data yet', 'Upload resumes and add a job description to get started.',
+        `<div class="row" style="justify-content:center"><a href="upload.html" class="btn btn-primary">${ICONS.upload} Upload Resumes</a>&nbsp;<a href="jd.html" class="btn btn-sec">${ICONS.file} Add JD</a></div>`);
+      return;
+    }
+    const topSkill = a.top_skills[0] || {skill:'—',count:0};
+    const topGap   = a.most_missing_skills[0] || {skill:'—',count:0};
+    const COLORS   = ['#6366f1','#06b6d4','#10b981','#f59e0b','#f43f5e','#8b5cf6','#ec4899'];
+    el.innerHTML = `
+    <div class="stats">
+      <div class="stat"><div class="stat-ic" style="background:rgba(99,102,241,.12);color:var(--brand)">${ICONS.users}</div><div><div class="stat-val">${a.total_candidates}</div><div class="stat-lbl">Total Candidates</div></div></div>
+      <div class="stat" style="animation-delay:.06s"><div class="stat-ic" style="background:rgba(16,185,129,.1);color:var(--green)">${ICONS.trend}</div><div><div class="stat-val">${a.average_match_score}%</div><div class="stat-lbl">Avg Match Score</div><div class="stat-sub">${a.average_match_score>=65?'Strong pool':'Needs attention'}</div></div></div>
+      <div class="stat" style="animation-delay:.12s"><div class="stat-ic" style="background:rgba(6,182,212,.1);color:var(--cyan)">${ICONS.zap}</div><div><div class="stat-val" style="font-size:15px;padding-top:3px">${topSkill.skill}</div><div class="stat-lbl">Top Skill</div><div class="stat-sub">${topSkill.count} candidates</div></div></div>
+      <div class="stat" style="animation-delay:.18s"><div class="stat-ic" style="background:rgba(245,158,11,.1);color:var(--amber)">${ICONS.alert}</div><div><div class="stat-val" style="font-size:15px;padding-top:3px">${topGap.skill}</div><div class="stat-lbl">Top Gap</div><div class="stat-sub">${topGap.count} missing</div></div></div>
+    </div>
+    <div class="g2 mb3">
+      <div class="card card-p">
+        <div class="card-hd"><span class="card-title">Score Distribution</span></div>
+        <canvas id="dist-chart" height="170"></canvas>
+      </div>
+      <div class="card card-p">
+        <div class="card-hd"><span class="card-title">Top Skills in Pool</span></div>
+        ${a.top_skills.slice(0,7).map((s,i)=>`
+          <div class="row mb2">
+            <span class="text-muted mono text-xs" style="width:16px">${i+1}</span>
+            <span class="text-soft text-sm" style="width:110px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${s.skill}</span>
+            <div style="flex:1">${progBar(s.count,a.total_candidates,COLORS[i])}</div>
+            <span class="text-muted text-xs mono" style="width:20px;text-align:right">${s.count}</span>
+          </div>`).join('')}
+      </div>
+    </div>
+    <div class="g2">
+      <div class="card card-p">
+        <div class="card-hd"><span class="card-title">Top Candidates</span><a href="ranking.html" class="btn btn-ghost btn-sm">View all →</a></div>
+        ${a.rankings.slice(0,5).map(c=>`
+          <a href="candidate.html?id=${c.id}" style="display:flex;align-items:center;gap:10px;padding:8px 4px;border-radius:var(--r-sm);text-decoration:none;transition:background var(--t)" onmouseover="this.style.background='rgba(255,255,255,0.03)'" onmouseout="this.style.background=''">
+            <span class="mono text-xs text-muted" style="width:22px">#${c.rank}</span>
+            <div style="flex:1;min-width:0"><div style="font-size:13px;color:var(--text);font-weight:500;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${c.name}</div><div class="text-xs text-muted">${c.matched_skills} matched · ${c.missing_skills} missing</div></div>
+            <span class="mono bold" style="color:${scoreColor(c.score)}">${c.score}%</span>
+          </a>`).join('') || '<p class="text-muted text-sm">Run matching to see rankings</p>'}
+      </div>
+      <div class="card card-p">
+        <div class="card-hd"><span class="card-title">Skill Gap Analysis</span></div>
+        ${a.skill_gap_analysis.length ? a.skill_gap_analysis.slice(0,6).map(s=>`
+          <div class="mb2">
+            <div class="row-between mb2"><span class="text-soft text-sm">${s.skill}</span><span class="text-muted text-xs">${s.coverage_pct}%</span></div>
+            ${progBar(s.coverage_pct,100,s.coverage_pct<30?'#f43f5e':s.coverage_pct<60?'#f59e0b':'#10b981')}
+          </div>`).join('') : '<p class="text-muted text-sm">Select a JD above to see skill gaps</p>'}
+      </div>
+    </div>`;
+    drawChart(a.score_distribution);
+  } catch(e) { el.innerHTML = `<p class="text-muted" style="padding:20px">Error: ${e.message}</p>`; }
+}
+
+function drawChart(dist) {
+  const canvas = document.getElementById('dist-chart');
+  if (!canvas) return;
+  const dpr = devicePixelRatio || 1;
+  canvas.width = canvas.offsetWidth * dpr;
+  canvas.height = 170 * dpr;
+  const ctx = canvas.getContext('2d');
+  ctx.scale(dpr, dpr);
+  const W = canvas.offsetWidth, H = 170;
+  const COLORS = ['#6366f1','#06b6d4','#10b981','#f59e0b','#f43f5e'];
+  const max = Math.max(...dist.map(d=>d.count), 1);
+  const n = dist.length, slot = (W - 40) / n;
+  dist.forEach((d, i) => {
+    const bw = slot - 8, x = 20 + i * slot;
+    const bh = (d.count / max) * (H - 36);
+    const y = H - 24 - bh;
+    ctx.fillStyle = COLORS[i % COLORS.length] + 'cc';
+    ctx.beginPath(); ctx.roundRect(x, y, bw, bh, 4); ctx.fill();
+    ctx.fillStyle = '#555570'; ctx.font = "10px 'JetBrains Mono'"; ctx.textAlign = 'center';
+    ctx.fillText(d.range, x + bw/2, H - 6);
+    if (d.count) { ctx.fillStyle = '#e2e2f0'; ctx.fillText(d.count, x + bw/2, y - 4); }
+  });
+}
+
+load();
+</script>
+</body>
+</html>

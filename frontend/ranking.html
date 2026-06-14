@@ -1,0 +1,112 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Rankings — ResumeIQ</title>
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<div id="app" class="shell"></div>
+<div id="toasts"></div>
+<script src="app.js"></script>
+<script>
+document.getElementById('app').innerHTML = sidebarHTML('ranking') + `
+<main class="main"><div class="inner">
+  <div class="page-hd">
+    <div class="hd-row">
+      <div><h1>Rankings</h1><p>Candidates ranked by AI match score</p></div>
+      <div class="row">
+        <select id="jd-sel" style="max-width:220px;font-size:12px"></select>
+        <button id="rank-btn" class="btn btn-primary">${ICONS.zap}<span>Run Matching</span></button>
+      </div>
+    </div>
+  </div>
+  <div id="body"><div class="loader"><div class="spin"></div></div></div>
+</div></main>`;
+
+let all = [], jdId = null;
+const jdSel   = document.getElementById('jd-sel');
+const rankBtn = document.getElementById('rank-btn');
+
+loadJDSelect(jdSel, id => { jdId = id; load(); });
+
+async function load() {
+  const el = document.getElementById('body');
+  el.innerHTML = `<div class="loader"><div class="spin"></div></div>`;
+  try {
+    // Always fetch all candidates
+    all = await getCandidates(null);
+    const ranked   = all.filter(c => c.match_score != null).sort((a,b) => b.match_score - a.match_score);
+    const unranked = all.filter(c => c.match_score == null);
+
+    if (!all.length) {
+      el.innerHTML = emptyState(ICONS.users, 'No candidates yet', 'Upload resumes first.',
+        `<a href="upload.html" class="btn btn-primary">${ICONS.upload} Upload Resumes</a>`);
+      return;
+    }
+
+    if (!ranked.length) {
+      el.innerHTML = emptyState(ICONS.zap, 'No rankings yet',
+        'Select a job description and click "Run Matching" to score and rank all candidates.',
+        `<button class="btn btn-primary" onclick="doRank()">${ICONS.zap} Run Matching Now</button>`);
+      return;
+    }
+
+    const MEDALS  = ['🥇','🥈','🥉'];
+    const GOLD_C  = ['#f59e0b','#94a3b8','#cd7c3a'];
+    el.innerHTML = `
+      ${ranked.length >= 2 ? `<div class="podium mb4">
+        ${ranked.slice(0,3).map((c,i) => `
+          <a href="candidate.html?id=${c.id}" class="podium-card${i===0?' gold':''}">
+            <div class="medal">${MEDALS[i] || '🏅'}</div>
+            <div class="p-avatar" style="color:${GOLD_C[i]||'#6366f1'};border-color:${GOLD_C[i]||'#6366f1'}40;background:${GOLD_C[i]||'#6366f1'}15">${c.name.charAt(0)}</div>
+            <div class="p-name">${c.name}</div>
+            <div class="p-score" style="color:${GOLD_C[i]||scoreColor(c.match_score)}">${c.match_score}%</div>
+            <div class="p-meta">${c.matched_skills.length} matched · ${c.missing_skills.length} missing</div>
+          </a>`).join('')}
+      </div>` : ''}
+      <div class="card">
+        ${ranked.map((c,i) => {
+          const sc = scoreColor(c.match_score);
+          return `<a href="candidate.html?id=${c.id}" style="display:grid;grid-template-columns:40px 36px 1fr auto 28px;gap:10px;align-items:center;padding:12px 14px;border-bottom:1px solid rgba(255,255,255,0.03);text-decoration:none;transition:background var(--t)" onmouseover="this.style.background='rgba(255,255,255,0.02)'" onmouseout="this.style.background=''">
+            <span class="mono text-xs text-muted" style="text-align:center">${MEDALS[i]||'#'+(i+1)}</span>
+            <div style="width:32px;height:32px;border-radius:50%;background:${sc}20;color:${sc};border:2px solid ${sc}40;display:flex;align-items:center;justify-content:center;font-weight:700;font-size:13px">${c.name.charAt(0)}</div>
+            <div style="min-width:0">
+              <div style="font-size:13px;color:var(--text);font-weight:500;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${c.name}</div>
+              <div class="wrap mt1">
+                ${c.matched_skills.slice(0,3).map(matchTag).join('')}
+                ${c.missing_skills.length ? `<span class="text-xs" style="color:var(--rose)">${c.missing_skills.length} missing</span>` : ''}
+              </div>
+            </div>
+            <div style="text-align:right;flex-shrink:0">
+              <div class="mono bold" style="font-size:17px;color:${sc}">${c.match_score}%</div>
+              <div class="text-xs text-muted">${c.experience_years ? c.experience_years+'y' : '—'}</div>
+            </div>
+            <div style="color:var(--text3)">${ICONS.eye}</div>
+          </a>`;
+        }).join('')}
+      </div>
+      ${unranked.length ? `<p class="text-muted text-xs" style="text-align:center;margin-top:12px">${unranked.length} candidate(s) not yet matched</p>` : ''}`;
+  } catch(e) {
+    el.innerHTML = `<p class="text-muted" style="padding:20px">Failed: ${e.message}</p>`;
+  }
+}
+
+async function doRank() {
+  if (!jdId) { toast('Select a Job Description from the dropdown first', 'err'); return; }
+  const ids = all.map(c => c.id);
+  if (!ids.length) { toast('No candidates to match', 'err'); return; }
+  setLoading(rankBtn, true);
+  try {
+    await matchCandidates(ids, jdId);
+    toast(`Matched and ranked ${ids.length} candidates!`, 'ok');
+    load();
+  } catch(e) { toast('Failed: ' + e.message, 'err'); }
+  setLoading(rankBtn, false);
+}
+
+rankBtn.addEventListener('click', doRank);
+load();
+</script>
+</body>
+</html>

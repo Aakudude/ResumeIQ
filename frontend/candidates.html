@@ -1,0 +1,159 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Candidates — ResumeIQ</title>
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<div id="app" class="shell"></div>
+<div id="toasts"></div>
+<script src="app.js"></script>
+<script>
+document.getElementById('app').innerHTML = sidebarHTML('candidates') + `
+<main class="main"><div class="inner">
+  <div class="page-hd">
+    <div class="hd-row">
+      <div><h1>Candidates</h1><p id="sub">Loading…</p></div>
+      <button id="match-btn" class="btn btn-primary">${ICONS.zap}<span>Match All</span></button>
+    </div>
+  </div>
+  <div class="row mb3" style="flex-wrap:wrap;gap:8px">
+    <input id="search" placeholder="Search name, email, skill…" style="max-width:260px;width:100%">
+    <select id="jd-sel" style="max-width:230px;font-size:12px"></select>
+    <span id="sel-info" class="text-muted text-xs"></span>
+  </div>
+  <div id="list"><div class="loader"><div class="spin"></div></div></div>
+</div></main>`;
+
+let all = [], filtered = [], jdId = null, selected = new Set();
+
+const searchEl  = document.getElementById('search');
+const jdSel     = document.getElementById('jd-sel');
+const matchBtn  = document.getElementById('match-btn');
+
+// Load JD dropdown — onChange just filters, does NOT restrict candidate fetch
+loadJDSelect(jdSel, id => { jdId = id; load(); });
+
+searchEl.addEventListener('input', () => render(doFilter()));
+
+// Always fetch ALL candidates — filter display only
+async function load() {
+  document.getElementById('list').innerHTML = `<div class="loader"><div class="spin"></div></div>`;
+  try {
+    // Fetch all candidates regardless of JD selection
+    all = await getCandidates(null);
+    document.getElementById('sub').textContent = `${all.length} candidate(s) total`;
+    render(doFilter());
+  } catch(e) {
+    document.getElementById('list').innerHTML = `<p class="text-muted" style="padding:20px">Failed to load: ${e.message}</p>`;
+  }
+}
+
+function doFilter() {
+  const q = searchEl.value.toLowerCase();
+  filtered = all.filter(c => {
+    const matchesSearch = !q || c.name.toLowerCase().includes(q) ||
+      (c.email||'').toLowerCase().includes(q) ||
+      c.extracted_skills.some(s => s.toLowerCase().includes(q));
+    // If a JD is selected, show only candidates linked to it (or all if none selected)
+    const matchesJD = !jdId || c.job_description_id === jdId;
+    return matchesSearch && matchesJD;
+  });
+  return filtered;
+}
+
+function render(list) {
+  const el = document.getElementById('list');
+  document.getElementById('sel-info').textContent = selected.size ? `${selected.size} selected` : '';
+
+  if (!list.length) {
+    el.innerHTML = all.length === 0
+      ? emptyState(ICONS.users, 'No candidates yet', 'Upload resumes to get started.',
+          `<a href="upload.html" class="btn btn-primary">${ICONS.upload} Upload Resumes</a>`)
+      : emptyState(ICONS.users, 'No matches', 'Try clearing the search or JD filter.');
+    return;
+  }
+
+  el.innerHTML = `<div class="card">
+    <div style="display:grid;grid-template-columns:28px 1fr 190px 70px 52px 72px;gap:8px;padding:9px 12px;border-bottom:1px solid var(--border)">
+      <div></div>
+      <div style="font-size:11px;font-weight:600;color:var(--text3);text-transform:uppercase;letter-spacing:.05em">Candidate</div>
+      <div style="font-size:11px;font-weight:600;color:var(--text3);text-transform:uppercase;letter-spacing:.05em">Skills</div>
+      <div style="font-size:11px;font-weight:600;color:var(--text3);text-transform:uppercase;letter-spacing:.05em">Exp</div>
+      <div style="font-size:11px;font-weight:600;color:var(--text3);text-transform:uppercase;letter-spacing:.05em;text-align:center">Score</div>
+      <div></div>
+    </div>
+    ${list.map(c => {
+      const sc = scoreColor(c.match_score);
+      return `<div style="display:grid;grid-template-columns:28px 1fr 190px 70px 52px 72px;gap:8px;padding:11px 12px;border-bottom:1px solid rgba(255,255,255,0.03);transition:background var(--t)" onmouseover="this.style.background='rgba(255,255,255,0.02)'" onmouseout="this.style.background=''">
+        <div style="display:flex;align-items:center">
+          <input type="checkbox" ${selected.has(c.id)?'checked':''} onchange="toggleSel(${c.id},this.checked)" onclick="event.stopPropagation()">
+        </div>
+        <div style="cursor:pointer;min-width:0" onclick="location.href='candidate.html?id=${c.id}'">
+          <div style="font-size:13px;color:var(--text);font-weight:500;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${c.name}</div>
+          <div class="text-xs text-muted" style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${c.email || c.filename}</div>
+          ${c.rank ? `<span style="font-size:10px;color:var(--brand2);font-family:'JetBrains Mono',monospace">Rank #${c.rank}</span>` : ''}
+        </div>
+        <div style="display:flex;flex-wrap:wrap;gap:4px;align-items:center;cursor:pointer" onclick="location.href='candidate.html?id=${c.id}'">
+          ${c.extracted_skills.slice(0,3).map(skillTag).join('')}
+          ${c.extracted_skills.length > 3 ? `<span class="text-xs text-muted">+${c.extracted_skills.length-3}</span>` : ''}
+        </div>
+        <div style="display:flex;align-items:center;font-size:13px;color:var(--text2)">${c.experience_years ? c.experience_years+'y' : '—'}</div>
+        <div style="display:flex;align-items:center;justify-content:center">
+          ${c.match_score != null
+            ? `<div class="score" style="border-color:${sc};color:${sc};width:40px;height:40px;font-size:11px">${c.match_score}%</div>`
+            : `<span class="text-muted">—</span>`}
+        </div>
+        <div style="display:flex;align-items:center;gap:3px">
+          <a href="candidate.html?id=${c.id}" class="btn btn-ghost btn-icon btn-sm">${ICONS.eye}</a>
+          <button class="btn btn-danger btn-icon btn-sm" onclick="rmCandidate(${c.id},this)">${ICONS.trash}</button>
+        </div>
+      </div>`;
+    }).join('')}
+  </div>`;
+
+  const pending = all.filter(c => c.match_score == null).length;
+  matchBtn.innerHTML = ICONS.zap + `<span>${selected.size ? `Match ${selected.size} Selected` : `Match All (${all.length})`}</span>`;
+}
+
+function toggleSel(id, checked) {
+  checked ? selected.add(id) : selected.delete(id);
+  render(filtered);
+}
+
+matchBtn.addEventListener('click', async () => {
+  if (!jdId) {
+    toast('Please select a Job Description from the dropdown first', 'err');
+    return;
+  }
+  // Fetch fresh from API instead of relying on `all`
+  setLoading(matchBtn, true);
+  try {
+    const fresh = await getCandidates(null);
+    const ids = selected.size ? [...selected] : fresh.map(c => c.id);
+    if (!ids.length) { toast('No candidates found', 'err'); setLoading(matchBtn, false); return; }
+    await matchCandidates(ids, jdId);
+    toast(`Matched ${ids.length} candidates!`, 'ok');
+    selected.clear();
+    load();
+  } catch(e) { toast('Failed: ' + e.message, 'err'); }
+  setLoading(matchBtn, false);
+});
+
+async function rmCandidate(id, btn) {
+  if (!confirm('Delete this candidate?')) return;
+  btn.disabled = true;
+  try {
+    await deleteCandidate(id);
+    all = all.filter(c => c.id !== id);
+    selected.delete(id);
+    render(doFilter());
+    toast('Deleted', 'ok');
+  } catch(e) { toast('Failed', 'err'); btn.disabled = false; }
+}
+
+load();
+</script>
+</body>
+</html>

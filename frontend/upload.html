@@ -1,0 +1,127 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Upload Resumes — ResumeIQ</title>
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<div id="app" class="shell"></div>
+<div id="toasts"></div>
+<script src="app.js"></script>
+<script>
+document.getElementById('app').innerHTML = sidebarHTML('upload') + `
+<main class="main"><div class="inner">
+  <div class="page-hd"><h1>Upload Resumes</h1><p>Upload one or multiple PDF resumes for AI analysis</p></div>
+  <div class="g2" style="align-items:start">
+    <div>
+      <div class="card card-p mb3">
+        <div class="card-hd"><span class="card-title">Link to Job Description</span><span class="text-xs text-muted">Optional</span></div>
+        <select id="jd-sel"></select>
+        <p class="text-xs text-muted mt1">Linking enables automatic skill matching after upload</p>
+      </div>
+      <div id="dropzone" class="dropzone mb3">
+        <input type="file" id="file-input" accept=".pdf" multiple style="display:none">
+        <div class="dz-icon">${ICONS.upload}</div>
+        <div style="font-size:14px;font-weight:600;color:var(--text);margin-bottom:4px">Drop PDF resumes here</div>
+        <div class="text-xs text-muted">or click to browse · multiple files supported</div>
+      </div>
+      <div id="file-list" class="card mb3" style="display:none"></div>
+      <div class="row">
+        <button id="upload-btn" class="btn btn-primary" disabled>${ICONS.upload}<span>Upload</span></button>
+        <button id="clear-btn" class="btn btn-ghost" style="display:none" onclick="clearAll()">Clear</button>
+        <a id="view-btn" href="candidates.html" class="btn btn-sec" style="display:none">${ICONS.users}<span>View Candidates →</span></a>
+      </div>
+    </div>
+    <div class="card card-p">
+      <div class="card-hd"><span class="card-title">How it works</span></div>
+      ${[['1','Select PDFs','Upload one or many resume PDFs'],['2','Text Extraction','PDF text parsed automatically'],['3','Skill Detection','200+ skills detected across 10 categories'],['4','Match & Rank','Link a JD to get instant scores']].map(([n,t,d])=>`
+        <div class="row mb3" style="align-items:flex-start;gap:12px">
+          <div style="width:22px;height:22px;border-radius:50%;background:var(--brand-bg);color:var(--brand2);display:flex;align-items:center;justify-content:center;font-size:11px;font-weight:700;flex-shrink:0">${n}</div>
+          <div><div style="font-size:13px;font-weight:600;color:var(--text);margin-bottom:2px">${t}</div><div class="text-xs text-muted">${d}</div></div>
+        </div>`).join('')}
+    </div>
+  </div>
+</div></main>`;
+
+let files = [];
+const dz        = document.getElementById('dropzone');
+const fileInput = document.getElementById('file-input');
+const uploadBtn = document.getElementById('upload-btn');
+const jdSel     = document.getElementById('jd-sel');
+
+loadJDSelect(jdSel);
+
+dz.addEventListener('click', () => fileInput.click());
+dz.addEventListener('dragover', e => { e.preventDefault(); dz.classList.add('drag'); });
+dz.addEventListener('dragleave', () => dz.classList.remove('drag'));
+dz.addEventListener('drop', e => { e.preventDefault(); dz.classList.remove('drag'); addFiles([...e.dataTransfer.files]); });
+fileInput.addEventListener('change', () => { addFiles([...fileInput.files]); fileInput.value = ''; });
+
+function addFiles(newFiles) {
+  const pdfs = newFiles.filter(f => f.name.toLowerCase().endsWith('.pdf'));
+  if (pdfs.length < newFiles.length) toast(`${newFiles.length - pdfs.length} non-PDF file(s) skipped`, 'info');
+  files = [...files, ...pdfs.map(f => ({ file: f, status: 'pending', result: null, error: null }))];
+  renderList();
+}
+
+function clearAll() {
+  files = [];
+  document.getElementById('file-list').style.display = 'none';
+  document.getElementById('clear-btn').style.display = 'none';
+  document.getElementById('view-btn').style.display = 'none';
+  uploadBtn.disabled = true;
+  uploadBtn.innerHTML = ICONS.upload + '<span>Upload</span>';
+}
+
+function renderList() {
+  const list = document.getElementById('file-list');
+  if (!files.length) { list.style.display = 'none'; return; }
+  list.style.display = 'block';
+  document.getElementById('clear-btn').style.display = '';
+  list.innerHTML = files.map((item, i) => {
+    const icon = item.status === 'uploading' ? `<div class="spin"></div>`
+      : item.status === 'done'     ? `<span style="color:var(--green);font-size:16px">✓</span>`
+      : item.status === 'error'    ? `<span style="color:var(--rose);font-size:16px">✕</span>`
+      : ICONS.file;
+    return `<div class="file-item">
+      <div class="file-ic">${icon}</div>
+      <div style="flex:1;min-width:0">
+        <div style="font-size:13px;color:var(--text);font-weight:500;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${item.file.name}</div>
+        <div class="text-xs text-muted">${(item.file.size/1024).toFixed(0)} KB${item.result ? ' · ' + item.result.name : ''}</div>
+        ${item.result ? `<div class="wrap mt1">${item.result.extracted_skills.slice(0,5).map(skillTag).join('')}${item.result.extracted_skills.length>5?`<span class="text-xs text-muted">+${item.result.extracted_skills.length-5}</span>`:''}</div>` : ''}
+        ${item.error ? `<div class="text-xs mt1" style="color:var(--rose)">${item.error}</div>` : ''}
+      </div>
+      ${item.status === 'pending' ? `<button class="btn btn-ghost btn-icon btn-sm" onclick="removeFile(${i})">${ICONS.x}</button>` : ''}
+    </div>`;
+  }).join('');
+  const pending = files.filter(f => f.status === 'pending').length;
+  uploadBtn.disabled = pending === 0;
+  uploadBtn.innerHTML = ICONS.upload + `<span>Upload ${pending ? pending + ' Resume(s)' : ''}</span>`;
+}
+
+function removeFile(i) { files.splice(i, 1); renderList(); }
+
+uploadBtn.addEventListener('click', async () => {
+  const pending = files.filter(f => f.status === 'pending');
+  if (!pending.length) return;
+  setLoading(uploadBtn, true);
+  files = files.map(f => f.status === 'pending' ? {...f, status: 'uploading'} : f);
+  renderList();
+  try {
+    const jdId = jdSel.value ? +jdSel.value : null;
+    const results = await uploadResumes(pending.map(f => f.file), jdId);
+    let ri = 0;
+    files = files.map(f => f.status === 'uploading' ? {...f, status: 'done', result: results[ri++]} : f);
+    toast(`${results.length} resume(s) uploaded successfully!`, 'ok');
+    document.getElementById('view-btn').style.display = '';
+  } catch(e) {
+    files = files.map(f => f.status === 'uploading' ? {...f, status: 'error', error: e.message} : f);
+    toast('Upload failed: ' + e.message, 'err');
+  }
+  setLoading(uploadBtn, false);
+  renderList();
+});
+</script>
+</body>
+</html>

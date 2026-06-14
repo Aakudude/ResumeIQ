@@ -1,0 +1,123 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Analytics — ResumeIQ</title>
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<div id="app" class="shell"></div>
+<div id="toasts"></div>
+<script src="app.js"></script>
+<script>
+document.getElementById('app').innerHTML = sidebarHTML('analytics') + `
+<main class="main"><div class="inner">
+  <div class="page-hd">
+    <div class="hd-row">
+      <div><h1>Analytics</h1><p>Deep insights into your candidate pool</p></div>
+      <select id="jd-sel" style="max-width:220px;font-size:12px"></select>
+    </div>
+  </div>
+  <div id="body"><div class="loader"><div class="spin"></div></div></div>
+</div></main>`;
+
+const COLORS = ['#6366f1','#06b6d4','#10b981','#f59e0b','#f43f5e','#8b5cf6','#ec4899','#14b8a6'];
+let jdId = null;
+loadJDSelect(document.getElementById('jd-sel'), id => { jdId = id; load(); });
+
+async function load() {
+  const el = document.getElementById('body');
+  el.innerHTML = `<div class="loader"><div class="spin"></div></div>`;
+  try {
+    const a = await getAnalytics(jdId);
+    if (!a.total_candidates) {
+      el.innerHTML = emptyState(ICONS.bar, 'No data yet', 'Upload resumes and run matching to see analytics');
+      return;
+    }
+    el.innerHTML = `
+      <div class="g2 mb3">
+        <div class="card card-p"><div class="card-hd"><span class="card-title">Score Distribution</span></div><canvas id="c1" height="180"></canvas></div>
+        <div class="card card-p"><div class="card-hd"><span class="card-title">Top Skills</span></div><canvas id="c2" height="180"></canvas></div>
+      </div>
+      <div class="g2 mb3">
+        <div class="card card-p">
+          <div class="card-hd"><span class="card-title">Most Common Skill Gaps</span></div>
+          ${a.most_missing_skills.slice(0,8).map(s=>`
+            <div class="mb2">
+              <div class="row-between mb2"><span class="text-soft text-sm">${s.skill}</span><span class="text-xs mono text-muted">${s.count}</span></div>
+              ${progBar(s.count,a.total_candidates,'#f43f5e')}
+            </div>`).join('') || '<p class="text-muted text-sm">No data</p>'}
+        </div>
+        <div class="card card-p">
+          <div class="card-hd"><span class="card-title">Skill Gap Coverage</span></div>
+          ${a.skill_gap_analysis.length ? a.skill_gap_analysis.slice(0,7).map(s=>`
+            <div class="mb2">
+              <div class="row-between mb2"><span class="text-soft text-sm">${s.skill}</span><span class="text-xs mono text-muted">${s.coverage_pct}%</span></div>
+              ${progBar(s.coverage_pct,100,s.coverage_pct<30?'#f43f5e':s.coverage_pct<60?'#f59e0b':'#10b981')}
+            </div>`).join('') : '<p class="text-muted text-sm">Select a JD to see gap coverage</p>'}
+        </div>
+      </div>
+      <div class="card card-p">
+        <div class="card-hd"><span class="card-title">All Candidates (${a.rankings.length})</span></div>
+        <div class="tbl-wrap">
+          <table>
+            <thead><tr><th>Rank</th><th>Name</th><th style="text-align:right">Score</th><th style="text-align:right">Matched</th><th style="text-align:right">Missing</th></tr></thead>
+            <tbody>${a.rankings.map(c=>`
+              <tr onclick="location.href='candidate.html?id=${c.id}'" style="cursor:pointer">
+                <td><span class="mono text-xs text-muted">#${c.rank}</span></td>
+                <td style="color:var(--text);font-weight:500">${c.name}</td>
+                <td style="text-align:right"><span class="mono bold" style="color:${scoreColor(c.score)}">${c.score}%</span></td>
+                <td style="text-align:right;color:var(--green)">${c.matched_skills}</td>
+                <td style="text-align:right;color:var(--rose)">${c.missing_skills}</td>
+              </tr>`).join('')}
+            </tbody>
+          </table>
+        </div>
+      </div>`;
+    drawBar(a.score_distribution);
+    drawDonut(a.top_skills.slice(0,6));
+  } catch(e) { el.innerHTML = `<p class="text-muted" style="padding:20px">Error: ${e.message}</p>`; }
+}
+
+function rr(ctx,x,y,w,h,r){ctx.beginPath();ctx.moveTo(x+r,y);ctx.lineTo(x+w-r,y);ctx.arcTo(x+w,y,x+w,y+r,r);ctx.lineTo(x+w,y+h);ctx.lineTo(x,y+h);ctx.lineTo(x,y+r);ctx.arcTo(x,y,x+r,y,r);ctx.closePath();ctx.fill();}
+
+function drawBar(dist) {
+  const c = document.getElementById('c1'); if(!c) return;
+  const dpr=devicePixelRatio||1; c.width=c.offsetWidth*dpr; c.height=180*dpr;
+  const ctx=c.getContext('2d'); ctx.scale(dpr,dpr);
+  const W=c.offsetWidth,H=180,max=Math.max(...dist.map(d=>d.count),1),n=dist.length,slot=(W-40)/n;
+  dist.forEach((d,i)=>{
+    const bw=slot-8,x=20+i*slot,bh=(d.count/max)*(H-36),y=H-24-bh;
+    ctx.fillStyle=COLORS[i%COLORS.length]+'cc'; rr(ctx,x,y,bw,bh,4);
+    ctx.fillStyle='#555570'; ctx.font="10px 'JetBrains Mono'"; ctx.textAlign='center';
+    ctx.fillText(d.range,x+bw/2,H-6);
+    if(d.count){ctx.fillStyle='#e2e2f0';ctx.fillText(d.count,x+bw/2,y-4);}
+  });
+}
+
+function drawDonut(skills) {
+  const c = document.getElementById('c2'); if(!c) return;
+  const dpr=devicePixelRatio||1; c.width=c.offsetWidth*dpr; c.height=180*dpr;
+  const ctx=c.getContext('2d'); ctx.scale(dpr,dpr);
+  const W=c.offsetWidth,H=180,cx=80,cy=H/2,r=65,total=skills.reduce((s,x)=>s+x.count,0)||1;
+  let angle=-Math.PI/2;
+  skills.forEach((s,i)=>{
+    const slice=(s.count/total)*Math.PI*2;
+    ctx.beginPath(); ctx.moveTo(cx,cy); ctx.arc(cx,cy,r,angle,angle+slice); ctx.closePath();
+    ctx.fillStyle=COLORS[i%COLORS.length]; ctx.fill(); angle+=slice;
+  });
+  ctx.beginPath(); ctx.arc(cx,cy,r*.52,0,Math.PI*2); ctx.fillStyle='#141425'; ctx.fill();
+  // Legend
+  skills.forEach((s,i)=>{
+    const lx=cx+r+16, ly=18+i*24;
+    ctx.fillStyle=COLORS[i%COLORS.length]; ctx.fillRect(lx,ly,10,10);
+    ctx.fillStyle='#8888a8'; ctx.font="11px Inter,sans-serif"; ctx.textAlign='left';
+    ctx.fillText(s.skill.length>14?s.skill.slice(0,13)+'…':s.skill,lx+14,ly+9);
+    ctx.fillStyle='#444460'; ctx.fillText(s.count,W-20,ly+9); ctx.textAlign='left';
+  });
+}
+
+load();
+</script>
+</body>
+</html>

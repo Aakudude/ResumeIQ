@@ -1,0 +1,132 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Job Descriptions — ResumeIQ</title>
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<div id="app" class="shell"></div>
+<div id="toasts"></div>
+<script src="app.js"></script>
+<script>
+const SAMPLE = `We are looking for a Senior Full Stack Engineer.
+
+Required:
+- 5+ years experience with Python, React, TypeScript
+- Strong knowledge of PostgreSQL, Redis, AWS
+- Experience with Docker, Kubernetes, CI/CD pipelines
+- REST API design and microservices
+
+Preferred:
+- FastAPI or Django experience
+- Terraform, infrastructure as code
+- GraphQL, machine learning`;
+
+document.getElementById('app').innerHTML = sidebarHTML('jd') + `
+<main class="main"><div class="inner">
+  <div class="page-hd">
+    <div class="hd-row">
+      <div><h1>Job Descriptions</h1><p>Create JDs to enable AI candidate matching</p></div>
+      <button class="btn btn-primary" onclick="toggleForm()">${ICONS.file}<span id="form-btn-txt">New JD</span></button>
+    </div>
+  </div>
+  <div id="form-wrap" class="card card-p mb3" style="display:none">
+    <div class="card-hd"><span class="card-title">New Job Description</span></div>
+    <div class="g2 mb3">
+      <div class="form-row"><label>Job Title *</label><input id="f-title" placeholder="e.g. Senior Full Stack Engineer"></div>
+      <div class="form-row"><label>Company</label><input id="f-company" placeholder="e.g. Acme Corp"></div>
+    </div>
+    <div class="form-row">
+      <div class="row-between mb2">
+        <label style="margin:0">Description *</label>
+        <button class="btn btn-ghost btn-sm" onclick="document.getElementById('f-content').value=SAMPLE">${ICONS.spark} Load sample</button>
+      </div>
+      <textarea id="f-content" style="min-height:160px;font-size:12px" placeholder="Paste the full job description here…"></textarea>
+    </div>
+    <div class="row">
+      <button id="save-btn" class="btn btn-primary" onclick="saveJD()">${ICONS.check}<span>Extract & Save</span></button>
+      <button class="btn btn-ghost" onclick="toggleForm()">Cancel</button>
+    </div>
+  </div>
+  <div id="list"><div class="loader"><div class="spin"></div></div></div>
+</div></main>`;
+
+let formOpen = false;
+function toggleForm() {
+  formOpen = !formOpen;
+  document.getElementById('form-wrap').style.display = formOpen ? '' : 'none';
+  document.getElementById('form-btn-txt').textContent = formOpen ? 'Cancel' : 'New JD';
+}
+
+async function saveJD() {
+  const title   = document.getElementById('f-title').value.trim();
+  const content = document.getElementById('f-content').value.trim();
+  if (!title || !content) { toast('Title and content are required', 'err'); return; }
+  const btn = document.getElementById('save-btn');
+  setLoading(btn, true);
+  try {
+    await createJD({ title, company: document.getElementById('f-company').value.trim(), content });
+    toast('Job description saved!', 'ok');
+    document.getElementById('f-title').value = '';
+    document.getElementById('f-company').value = '';
+    document.getElementById('f-content').value = '';
+    toggleForm();
+    loadList();
+  } catch(e) { toast('Failed: ' + e.message, 'err'); }
+  setLoading(btn, false);
+}
+
+async function loadList() {
+  const el = document.getElementById('list');
+  try {
+    const jds = await getJDs();
+    if (!jds.length) {
+      el.innerHTML = emptyState(ICONS.file, 'No job descriptions yet', 'Create a JD to enable AI candidate matching.',
+        `<button class="btn btn-primary" onclick="toggleForm()">${ICONS.file} Create first JD</button>`);
+      return;
+    }
+    el.innerHTML = jds.map(jd => `
+      <div class="card mb2" id="jd-${jd.id}">
+        <div class="row-between" style="padding:14px 16px;cursor:pointer" onclick="toggleDetail(${jd.id})">
+          <div class="row" style="gap:12px">
+            <div class="stat-ic" style="background:var(--brand-bg);color:var(--brand2)">${ICONS.file}</div>
+            <div>
+              <div style="font-size:14px;font-weight:600;color:var(--text)">${jd.title}</div>
+              <div class="text-xs text-muted">${jd.company?jd.company+' · ':''}${jd.required_skills.length} required skills${jd.experience_years?' · '+jd.experience_years+'y exp':''}</div>
+            </div>
+          </div>
+          <div class="row" style="gap:6px">
+            <button class="btn btn-danger btn-sm btn-icon" onclick="event.stopPropagation();rmJD(${jd.id})">${ICONS.trash}</button>
+            <span class="text-muted" id="arr-${jd.id}">▾</span>
+          </div>
+        </div>
+        <div id="jd-d-${jd.id}" style="display:none;border-top:1px solid var(--border);padding:14px 16px">
+          <p class="text-xs text-muted bold mb2" style="text-transform:uppercase;letter-spacing:.05em">Required Skills</p>
+          <div class="wrap mb3">${jd.required_skills.map(matchTag).join(' ') || '<span class="text-muted text-xs">None detected</span>'}</div>
+          ${jd.preferred_skills.length ? `<p class="text-xs text-muted bold mb2" style="text-transform:uppercase;letter-spacing:.05em">Preferred Skills</p><div class="wrap mb3">${jd.preferred_skills.map(prefTag).join(' ')}</div>` : ''}
+          <p class="text-xs text-muted bold mb2" style="text-transform:uppercase;letter-spacing:.05em">Full Description</p>
+          <pre style="font-size:11px;color:var(--text3);background:rgba(0,0,0,0.2);padding:12px;border-radius:var(--r-sm);max-height:140px;overflow-y:auto;white-space:pre-wrap;font-family:inherit">${jd.content}</pre>
+        </div>
+      </div>`).join('');
+  } catch(e) { el.innerHTML = `<p class="text-muted" style="padding:20px">Failed to load</p>`; }
+}
+
+function toggleDetail(id) {
+  const d = document.getElementById('jd-d-' + id);
+  const a = document.getElementById('arr-' + id);
+  const open = d.style.display === 'none';
+  d.style.display = open ? '' : 'none';
+  a.textContent = open ? '▴' : '▾';
+}
+
+async function rmJD(id) {
+  if (!confirm('Delete this job description?')) return;
+  try { await deleteJD(id); document.getElementById('jd-' + id).remove(); toast('Deleted', 'ok'); }
+  catch(e) { toast('Failed: ' + e.message, 'err'); }
+}
+
+loadList();
+</script>
+</body>
+</html>

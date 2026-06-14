@@ -1,0 +1,60 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Reports — ResumeIQ</title>
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<div id="app" class="shell"></div>
+<div id="toasts"></div>
+<script src="app.js"></script>
+<script>
+document.getElementById('app').innerHTML = sidebarHTML('reports') + `
+<main class="main"><div class="inner">
+  <div class="page-hd"><h1>Reports</h1><p>Export candidate data for stakeholders</p></div>
+  <div class="card card-p mb3">
+    <div class="card-hd"><span class="card-title">Filter by Job Description</span></div>
+    <select id="jd-sel" style="max-width:320px"></select>
+    <p class="text-xs text-muted mt1">Leave blank to export all candidates</p>
+  </div>
+  <div class="g2 mb3">
+    <div class="card card-p">
+      <div style="width:36px;height:36px;background:rgba(16,185,129,.1);border-radius:var(--r-sm);display:flex;align-items:center;justify-content:center;color:var(--green);margin-bottom:12px">${ICONS.down}</div>
+      <div style="font-size:15px;font-weight:600;color:var(--text);margin-bottom:6px">CSV Export</div>
+      <p class="text-sm text-muted mb3">Spreadsheet-ready for ATS, Excel, or Google Sheets. All candidate fields included.</p>
+      <button id="csv-btn" class="btn btn-green" style="width:100%;justify-content:center">${ICONS.down}<span>Download CSV</span></button>
+    </div>
+    <div class="card card-p">
+      <div style="width:36px;height:36px;background:var(--brand-bg);border-radius:var(--r-sm);display:flex;align-items:center;justify-content:center;color:var(--brand2);margin-bottom:12px">${ICONS.file}</div>
+      <div style="font-size:15px;font-weight:600;color:var(--text);margin-bottom:6px">PDF Report</div>
+      <p class="text-sm text-muted mb3">Formatted report with rankings, skill analysis and AI recommendations for hiring managers.</p>
+      <button id="pdf-btn" class="btn btn-primary" style="width:100%;justify-content:center">${ICONS.down}<span>Download PDF</span></button>
+    </div>
+  </div>
+  <div class="card card-p">
+    <div class="card-hd"><span class="card-title">What's included</span></div>
+    <div class="g2">
+      ${['Candidate name & contact info','Match score per candidate','Matched & missing skills','Experience years detected','Education level extracted','AI-generated recommendations','Candidate rank & ordering','Job description reference'].map(item=>
+        `<div class="row" style="gap:8px"><span style="color:var(--green);flex-shrink:0">${ICONS.check}</span><span class="text-sm text-soft">${item}</span></div>`
+      ).join('')}
+    </div>
+  </div>
+</div></main>`;
+
+const jdSel = document.getElementById('jd-sel');
+loadJDSelect(jdSel);
+
+document.getElementById('csv-btn').addEventListener('click', () => {
+  const id = jdSel.value;
+  window.open(`http://localhost:8000/api/v1/reports/csv${id?'?jd_id='+id:''}`, '_blank');
+  toast('Downloading CSV…', 'ok');
+});
+document.getElementById('pdf-btn').addEventListener('click', () => {
+  const id = jdSel.value;
+  window.open(`http://localhost:8000/api/v1/reports/pdf${id?'?jd_id='+id:''}`, '_blank');
+  toast('Generating PDF…', 'ok');
+});
+</script>
+</body>
+</html>
